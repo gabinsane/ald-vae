@@ -1,4 +1,4 @@
-# Multimodal VAE Comparison
+# ALD-VAE
 
 This is the official code for the submitted ICONIP 2023 submission "Adaptive Compression of the Latent Space in Variational Autoencoders".
 
