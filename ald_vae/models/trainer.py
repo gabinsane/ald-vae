@@ -14,33 +14,11 @@ from utils import make_kl_df, data_to_device, check_input_unpacked, change_laten
 from visualization import plot_kls_df
 from visualization import t_sne
 
-
-def exp_prior(t, p: float = 0.25):
-    """
-    geometric prior for every datapoint
-    Refer to https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.geom.html for more information on the geometric prior
-    Everything reported is in log form.
-    Arguments:
-        t - number of trials
-        p - probability of success
-    """
-    return pow(t, p)
-
-def custom_hazard(lam, r):
-    """
-    Hazard function for bayesian online learning
-    Arguments:
-        lam - inital prob
-        r - R matrix
-    """
-    print(lam)
-    return 1 / lam * np.ones(r.shape)
-
 class ALDVAE(pl.LightningModule):
     """
-    Multimodal VAE trainer common for all architectures. Configures, trains and tests the model.
+    VAE trainer. Configures, trains and tests the model.
 
-    :param feature_dims: dictionary with feature dimensions of raining data
+    :param feature_dims: dictionary with feature dimensions of training data
     :type feature_dims: dict
     :param cfg: instance of Config class
     :type cfg: Config
@@ -94,11 +72,6 @@ class ALDVAE(pl.LightningModule):
         if self.config.optimizer.lower() == "adam":
             self.optimizer = optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()),
                                         lr=float(self.config.lr), amsgrad=True)
-        elif self.config.optimizer.lower() == "adabelief":
-            from adabelief_pytorch import AdaBelief
-            self.optimizer = AdaBelief(self.model.parameters(), lr=float(self.config.lr), eps=1e-16,
-                                       betas=(0.9, 0.999),
-                                       weight_decouple=True, rectify=False, print_change_log=False)
         else:
             raise NotImplementedError
         return self.optimizer
@@ -116,7 +89,7 @@ class ALDVAE(pl.LightningModule):
                                                self.config.n_latents, m["recon_loss"], m["private_latents"], m["growtype"],
                                                obj_fn=self.config.obj,
                                                beta=self.config.beta, id_name="mod_{}".format(i + 1))
-        self.model = vaes["mod_1"]  # unimodal VAE scenario
+        self.model = vaes["mod_1"]
         self.save_hyperparameters()
         return self.model
 
@@ -195,7 +168,7 @@ class ALDVAE(pl.LightningModule):
         recons = self.save_joint_samples(num_samples=ns, savedir=None, traversals=False)["mod_1_raw"]
         samples, _ = self.datamod.get_num_samples(ns, split="train")
         recons2 = self.save_reconstructions(data=samples, savedir=None)
-        if self.config.dataset_name == "sprites":
+        if self.config.dataset_name == "sprites":  # reshape the animations for FID calculation
             samples_ = samples["mod_1"]["data"].reshape(ns, 3,64,8*64).float().clone().detach().cpu()
             recons = recons.clone().detach().reshape(*samples["mod_1"]["data"].reshape(ns, 3,64,8*64).shape).float().cpu()
             recons2 = recons2.clone().detach().reshape(*samples["mod_1"]["data"].reshape(ns, 3,64,8*64).shape).float().cpu()
@@ -203,7 +176,7 @@ class ALDVAE(pl.LightningModule):
             samples_ = samples["mod_1"]["data"].float().clone().detach().cpu()
             recons = recons.clone().detach().reshape(*samples["mod_1"]["data"].shape).float().cpu()
             recons2 = recons2.clone().detach().reshape(*samples["mod_1"]["data"].shape).float().cpu()
-        if self.fid_stats ==  None:
+        if self.fid_stats ==  None:  # calculate the dataset statistics only once to save time
             FID, stats = calculate_fid_given_data([samples_, recons])
             self.fid_stats = stats
         else:
@@ -215,7 +188,7 @@ class ALDVAE(pl.LightningModule):
         self.log("FID Recon", FID_recon)
         self.recon_losses[-1] = float(torch.stack(self.recon_losses[-1]).mean().cpu().detach())
         cluster_eval = self.analyse_data(fn_list=["clusters"], num_samples=1000)
-        for ind, name in enumerate(["silhouette", "davies_bouldin", "acc"]):
+        for ind, name in enumerate(["silhouette", "acc"]):
             if cluster_eval[name] is not None:
                 self.clustering[ind].append(cluster_eval[name])
         all_data = {"Silhouette score": self.clustering[0],
@@ -240,7 +213,7 @@ class ALDVAE(pl.LightningModule):
         return list(probs.values())
 
     def decider(self, all_data):
-        """Make a decision on what to do next based on whether a changepoint is detected in Silhouette or DB scores"""
+        """Make a decision on what to do next based on the slope of Silhouette, Recon loss and FID"""
         if len(self.clustering[0]) >= self.detection_window:
             slope1 = value_is_changing(self.clustering[0], window=10)
             if slope1 == True and self.latent_n > 2:
@@ -375,39 +348,29 @@ class ALDVAE(pl.LightningModule):
             plot_kls_df(kl_df, os.path.join(savedir, 'kl_distance{}.png'.format(path_name)))
         if hasattr(labels[0], "__len__") and len(labels[0]) > 1 and any([isinstance(labels[0], list), type(labels[0]).__module__ == "numpy"])\
                 and not isinstance(labels[0], str):
-            cluster_scores = {"silhouette": [], "davies_bouldin": []}
+            cluster_scores = {"silhouette": []}
             for i, _ in enumerate(labels[0]):
                 label = [x[i] for x in labels]
                 path_name += "_feature{}".format(i)
                 cs = self.analyse_clusters(zss_sampled, savedir, path_name, list(label), fn_list)
                 cluster_scores["silhouette"].append(cs["silhouette"])
-                cluster_scores["davies_bouldin"].append(cs["davies_bouldin"])
             cluster_scores["silhouette"] = np.mean(np.asarray(cluster_scores["silhouette"]))
-            cluster_scores["davies_bouldin"] = np.mean(np.asarray(cluster_scores["davies_bouldin"]))
         else:
             cluster_scores = self.analyse_clusters(zss_sampled, savedir, path_name, labels, fn_list)
         return cluster_scores
 
     def analyse_clusters(self, zss_sampled, savedir, path_name, labels, fn_list):
-        cluster_scores = {"silhouette": None, "davies_bouldin": None, "sill2":None, "acc":None}
+        cluster_scores = {"silhouette": None, "acc":None}
         if "tsne" in fn_list:
             t_sne([x for x in zss_sampled[1:]], os.path.join(savedir, 't_sne{}.png'.format(path_name)), labels,
                   self.mod_names)
         if "clusters" in fn_list and labels is not None:
             d = [x for x in zss_sampled[1:]]
-            if len(self.config.mods) > 1:
-                sil, db = [], []
-                for m in d:
-                    sil.append(sklearn.metrics.silhouette_score(np.asarray(m.detach().cpu().numpy()), labels))
-                    db.append(sklearn.metrics.davies_bouldin_score(np.asarray(m.detach().cpu().numpy()), labels))
-                cluster_scores["silhouette"] = sum(sil)/len(sil)
-                cluster_scores["davies_bouldin"] = sum(db)/len(db)
-            else:
-                km = KMeans(n_clusters=self.config.exp_classes, random_state=42)
-                km.fit_predict(np.concatenate([x.detach().cpu().numpy() for x in d]))
-                acc = calculate_acc(np.asarray(labels), np.asarray(km.labels_))
-                cluster_scores["acc"] = acc
-                cluster_scores["silhouette"] = sklearn.metrics.silhouette_score(np.concatenate([x.detach().cpu().numpy() for x in d]), labels, metric='euclidean')
+            km = KMeans(n_clusters=self.config.exp_classes, random_state=42)
+            km.fit_predict(np.concatenate([x.detach().cpu().numpy() for x in d]))
+            acc = calculate_acc(np.asarray(labels), np.asarray(km.labels_))
+            cluster_scores["acc"] = acc
+            cluster_scores["silhouette"] = sklearn.metrics.silhouette_score(np.concatenate([x.detach().cpu().numpy() for x in d]), labels, metric='euclidean')
         return cluster_scores
 
     def eval_forward(self, data):
