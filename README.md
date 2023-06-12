@@ -72,8 +72,11 @@ If you have downloaded and extracted data for your chosen dataset, you can launc
 
 
 ```
-python main.py --cfg configs/config_mnist.yml
+python main.py --cfg configs/mnist_aldvae.yml
 ```
+
+To switch the latent space compression mechanism on/off, you can change the "adaptive" parameter in the config from 1 to 0 (as is done e.g. in mnist_fixed.yml). You can also change parameters such as initial_latent_n (how many neurons to remove at once in each pruning) and initial_patience (perform pruning every xx epochs). The parameter n_latents is the initial latent dimensionality in ALD-VAE and the fixed dimensionality in the non-adaptive scenario.
+
 
 
 ## License

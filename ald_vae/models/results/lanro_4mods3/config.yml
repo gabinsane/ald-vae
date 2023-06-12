@@ -1,0 +1,58 @@
+batch_size: 16
+beta: 1
+dataset_name: lanro
+epochs: 400
+exp_name: lanro_4mods3
+labels: null
+lr: 1e-4
+mixing: poe
+modality_1:
+  decoder: TxtTransformer
+  encoder: Transformer
+  growtype: neurons
+  mod_type: language
+  path: /home/gabi/mirracle_multimodal/multimodal_compare/data/lanro/lanro_instructions.pkl
+  private_latents: null
+  recon_loss: category_ce
+  test_datapath: null
+modality_2:
+  decoder: RESCNN
+  encoder: RESCNN
+  growtype: neurons
+  mod_type: front RGB
+  path: /home/gabi/mirracle_multimodal/multimodal_compare/data/lanro/lanro_images.pkl
+  private_latents: null
+  recon_loss: mse
+  test_datapath: null
+modality_3:
+  decoder: Transformer
+  encoder: Transformer
+  growtype: neurons
+  mod_type: actions
+  path: /home/gabi/mirracle_multimodal/multimodal_compare/data/lanro/lanro_robot_poses.pkl
+  private_latents: null
+  recon_loss: mse
+  test_datapath: null
+modality_4:
+  decoder: Transformer
+  encoder: Transformer
+  growtype: neurons
+  mod_type: objects
+  path: /home/gabi/mirracle_multimodal/multimodal_compare/data/lanro/lanro_object_poses.pkl
+  private_latents: null
+  recon_loss: mse
+  test_datapath: null
+model_cfg:
+  decoder: 0
+  ff_size: 1024
+  multi_nets: 0
+  num_heads: 4
+  num_layers: 4
+  output_mean: 0
+n_latents: 32
+obj: elbo
+optimizer: adam
+pre_trained: null
+seed: 2
+test_split: 0.1
+viz_freq: 5
