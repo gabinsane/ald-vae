@@ -1,6 +1,6 @@
 # ALD-VAE
 
-This is the official code for the submitted ICONIP 2023 submission "Adaptive Compression of the Latent Space in Variational Autoencoders".
+This is the official code for the ICANN 2024 paper "[Adaptive Compression of the Latent Space in Variational Autoencoders](https://link.springer.com/chapter/10.1007/978-3-031-72332-2_7)".
 
 ---
 ### **List of contents**
